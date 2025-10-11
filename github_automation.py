@@ -1,102 +1,79 @@
 import os
 import logging
-from git import Repo
-from github import Github
+from metadata_framework import MetadataFramework
+from github_automation import automate_github_pr
+from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO)
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-def write_description_to_file(description, file_path):
+def main():
+    logger.info("Starting metadata generation and GitHub PR automation")
+
+    # Load environment variables
+    DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
+    DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
+    MODEL_SERVING_ENDPOINT = os.getenv("MODEL_SERVING_ENDPOINT")
+    MODEL_SERVING_TOKEN = os.getenv("MODEL_SERVING_TOKEN")
+    GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+    REPO_DIR = os.getenv("REPO_DIR")
+    REPO_NAME = os.getenv("REPO_NAME")
+
+    logger.info(f"Configuration loaded - Repository: {REPO_NAME}")
+
+    upstream_tables = [
+        "workspace.default.raw_customers",
+        "workspace.default.raw_orders"
+    ]
+    downstream_table = "workspace.default.customer_summary"
+
+    # Extract actual table name for SQL filename
+    actual_table_name = downstream_table.split('.')[-1]
+    sql_file_path = os.path.join(os.getcwd(), "sql", f"{actual_table_name}.sql")
+    logger.info(f"Loading SQL from file: {sql_file_path}")
+
     try:
-        with open(file_path, 'w') as f:
-            f.write(description)
-        logger.info(f"Description written to file: {file_path}")
+        with open(sql_file_path, 'r') as sql_file:
+            sql_query = sql_file.read()
+        logger.info("SQL query loaded successfully")
     except Exception as e:
-        logger.error(f"Error writing to file {file_path}: {e}")
+        logger.error(f"Failed to read SQL file {sql_file_path}: {e}")
         raise
 
-def create_and_push_branch(repo_dir, branch_name, file_path, commit_msg, description):
-    logger.info(f"Creating and pushing branch: {branch_name}")
-    try:
-        repo = Repo(repo_dir)
-        origin = repo.remote(name='origin')
+    logger.info("Initializing MetadataFramework with Databricks connection")
+    mf = MetadataFramework(
+        DATABRICKS_HOST,
+        DATABRICKS_TOKEN,
+        model_serving_token=MODEL_SERVING_TOKEN,
+        model_endpoint=MODEL_SERVING_ENDPOINT
+    )
 
-        # Branch checkout or create
-        if branch_name in repo.heads:
-            logger.info(f"Checking out existing branch: {branch_name}")
-            repo.heads[branch_name].checkout()
-        else:
-            logger.info(f"Creating new branch: {branch_name}")
-            repo.git.checkout('HEAD', b=branch_name)
+    logger.info("Generating table description and PR metadata using LLM")
+    result = mf.run(upstream_tables, downstream_table, sql_query)
 
-        # Write updated description FIRST (before merge)
-        write_description_to_file(description, file_path)
+    # Extract description and PR metadata from JSON result
+    description = result.get('description', 'No description generated')
+    pr_metadata = result.get('pr_metadata', {})
 
-        # Add and commit changes
-        repo.git.add(file_path)
-        repo.index.commit(commit_msg)
-        logger.info(f"Changes committed with message: {commit_msg}")
-
-        # Update feature branch with latest main to avoid conflicts
-        logger.info("Fetching latest changes from main branch")
-        origin.fetch()
-        try:
-            repo.git.merge('origin/main')
-            logger.info("Successfully merged latest main branch changes")
-        except Exception as merge_error:
-            logger.warning(f"Merge warning (continuing): {merge_error}")
-
-        # Push branch
-        origin.push(branch_name)
-        logger.info(f"Branch {branch_name} pushed to remote successfully")
-
-    except Exception as e:
-        logger.error(f"Error in branch creation/push: {e}")
-        raise
-
-def create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token):
-    logger.info(f"Creating pull request for branch: {branch_name}")
-    try:
-        g = Github(github_token)
-        repo = g.get_repo(repo_name)
-
-        # Check for existing open PR from this branch
-        prs = repo.get_pulls(state='open', head=f"{repo.owner.login}:{branch_name}")
-
-        for pr in prs:
-            if pr.head.ref == branch_name:
-                logger.info(f"Existing PR found: {pr.html_url}")
-                return pr.html_url
-
-        # Create new PR
-        pr = repo.create_pull(title=pr_title, body=pr_body, head=branch_name, base='main')
-        logger.info(f"New PR created successfully: {pr.html_url}")
-        return pr.html_url
-
-    except Exception as e:
-        logger.error(f"Error creating pull request: {e}")
-        raise
-
-def automate_github_pr(description, pr_metadata, repo_dir, repo_name, github_token):
+    logger.info("Description generated successfully")
     logger.info("Starting GitHub PR automation")
-    try:
-        file_path = os.path.join(repo_dir, 'configs/downstream_table_description.md')
-        
-        # Use LLM-generated metadata or fallback to defaults
-        branch_name = pr_metadata.get('branch_name', 'update-downstream-table-desc')
-        commit_msg = pr_metadata.get('commit_message', 'Auto-update downstream table metadata description')
-        pr_title = pr_metadata.get('title', 'Update downstream table metadata description')
-        pr_body = pr_metadata.get('body', 'This PR updates the description for the downstream table generated by automation.')
 
-        logger.info(f"Using branch name: {branch_name}")
-        logger.info(f"Using PR title: {pr_title}")
+    # Pass the downstream table info for JSON entry
+    pr_url = automate_github_pr(
+        description,
+        pr_metadata,
+        REPO_DIR,
+        REPO_NAME,
+        GITHUB_TOKEN,
+        downstream_table
+    )
 
-        create_and_push_branch(repo_dir, branch_name, file_path, commit_msg, description)
-        pr_url = create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token)
+    logger.info(f"Process completed successfully - PR URL: {pr_url}")
 
-        logger.info(f"GitHub PR automation completed - PR URL: {pr_url}")
-        return pr_url
-
-    except Exception as e:
-        logger.error(f"Error in GitHub PR automation: {e}")
-        raise
+if __name__ == "__main__":
+    main()
