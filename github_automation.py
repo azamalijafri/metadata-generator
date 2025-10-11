@@ -17,13 +17,15 @@ def create_and_push_branch(repo_dir, branch_name, file_path, commit_msg):
     else:
         repo.git.checkout('HEAD', b=branch_name)
 
-    # Pull latest changes from remote to avoid conflicts
-    origin.pull(branch_name)
+    # Pull latest changes from remote main branch into current branch
+    origin.fetch()  # fetch all remotes first
+    repo.git.merge('origin/main')
 
     repo.git.add(file_path)
     repo.index.commit(commit_msg)
     origin.push(branch_name)
     print(f"Pushed {branch_name}")
+
 
 
 def create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token):
