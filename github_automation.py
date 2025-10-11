@@ -3,110 +3,100 @@ import logging
 from git import Repo
 from github import Github
 
-# Configure logger
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def write_description_to_file(description, file_path):
-    logger.debug(f"Writing description to file: {file_path}")
     try:
         with open(file_path, 'w') as f:
             f.write(description)
-        logger.info(f"Successfully written to {file_path}")
+        logger.info(f"Description written to file: {file_path}")
     except Exception as e:
         logger.error(f"Error writing to file {file_path}: {e}")
         raise
 
 def create_and_push_branch(repo_dir, branch_name, file_path, commit_msg, description):
-    logger.info(f"Starting branch creation and push for branch: {branch_name}")
+    logger.info(f"Creating and pushing branch: {branch_name}")
     try:
         repo = Repo(repo_dir)
         origin = repo.remote(name='origin')
-        logger.debug(f"Repository initialized from: {repo_dir}")
 
         # Branch checkout or create
         if branch_name in repo.heads:
-            logger.debug(f"Checking out existing branch: {branch_name}")
+            logger.info(f"Checking out existing branch: {branch_name}")
             repo.heads[branch_name].checkout()
         else:
-            logger.debug(f"Creating and checking out new branch: {branch_name}")
+            logger.info(f"Creating new branch: {branch_name}")
             repo.git.checkout('HEAD', b=branch_name)
 
         # Write updated description FIRST (before merge)
-        logger.debug("Writing description to file before merge")
         write_description_to_file(description, file_path)
 
         # Add and commit changes
-        logger.debug(f"Adding file {file_path} to git")
         repo.git.add(file_path)
-        logger.debug(f"Committing changes with message: {commit_msg}")
         repo.index.commit(commit_msg)
+        logger.info(f"Changes committed with message: {commit_msg}")
 
         # Update feature branch with latest main to avoid conflicts
-        logger.debug("Fetching origin and merging origin/main")
+        logger.info("Fetching latest changes from main branch")
         origin.fetch()
         try:
             repo.git.merge('origin/main')
-            logger.debug("Successfully merged origin/main")
+            logger.info("Successfully merged latest main branch changes")
         except Exception as merge_error:
-            logger.warning(f"Merge conflict or error: {merge_error}")
-            # Continue anyway as the commit is already made
+            logger.warning(f"Merge warning (continuing): {merge_error}")
 
         # Push branch
-        logger.debug(f"Pushing branch {branch_name} to origin")
         origin.push(branch_name)
-        logger.info(f"Successfully pushed {branch_name}")
+        logger.info(f"Branch {branch_name} pushed to remote successfully")
 
     except Exception as e:
-        logger.error(f"Error in create_and_push_branch: {e}")
+        logger.error(f"Error in branch creation/push: {e}")
         raise
 
 def create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token):
-    logger.info(f"Starting PR creation for branch: {branch_name}")
+    logger.info(f"Creating pull request for branch: {branch_name}")
     try:
         g = Github(github_token)
         repo = g.get_repo(repo_name)
-        logger.debug(f"GitHub repo initialized: {repo_name}")
-        
+
         # Check for existing open PR from this branch
-        logger.debug(f"Checking for existing open PRs from branch: {branch_name}")
         prs = repo.get_pulls(state='open', head=f"{repo.owner.login}:{branch_name}")
-        
+
         for pr in prs:
             if pr.head.ref == branch_name:
                 logger.info(f"Existing PR found: {pr.html_url}")
                 return pr.html_url
-        
-        # If no existing PR, create new one
-        logger.debug(f"Creating new PR with title: {pr_title}")
+
+        # Create new PR
         pr = repo.create_pull(title=pr_title, body=pr_body, head=branch_name, base='main')
-        logger.info(f"Successfully created PR: {pr.html_url}")
+        logger.info(f"New PR created successfully: {pr.html_url}")
         return pr.html_url
 
     except Exception as e:
-        logger.error(f"Error in create_pull_request: {e}")
+        logger.error(f"Error creating pull request: {e}")
         raise
 
 def automate_github_pr(description, pr_metadata, repo_dir, repo_name, github_token):
     logger.info("Starting GitHub PR automation")
     try:
         file_path = os.path.join(repo_dir, 'configs/downstream_table_description.md')
-        branch_name = 'update-downstream-table-desc'
         
         # Use LLM-generated metadata or fallback to defaults
+        branch_name = pr_metadata.get('branch_name', 'update-downstream-table-desc')
         commit_msg = pr_metadata.get('commit_message', 'Auto-update downstream table metadata description')
         pr_title = pr_metadata.get('title', 'Update downstream table metadata description')
         pr_body = pr_metadata.get('body', 'This PR updates the description for the downstream table generated by automation.')
 
-        logger.debug(f"Using PR metadata - Title: {pr_title}, Commit: {commit_msg}")
-        logger.debug(f"File path: {file_path}")
+        logger.info(f"Using branch name: {branch_name}")
+        logger.info(f"Using PR title: {pr_title}")
 
         create_and_push_branch(repo_dir, branch_name, file_path, commit_msg, description)
         pr_url = create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token)
-        
-        logger.info(f"GitHub PR automation completed successfully - PR URL: {pr_url}")
+
+        logger.info(f"GitHub PR automation completed - PR URL: {pr_url}")
         return pr_url
 
     except Exception as e:
-        logger.error(f"Error in automate_github_pr: {e}")
+        logger.error(f"Error in GitHub PR automation: {e}")
         raise
