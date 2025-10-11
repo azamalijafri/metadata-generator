@@ -1,4 +1,17 @@
-venv
-.env
-__pycache__
+# Byte-compiled / optimized / DLL files
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# Environment variables file
+.env
+
+# Additional common ignores
+.Python
+*.egg-info/
+dist/
+build/
