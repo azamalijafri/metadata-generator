@@ -31,7 +31,7 @@ class MetadataFramework:
         logger.info("Downstream Table Info:\n%s", downstream_cols)
 
         prompt = (
-            "Based on the following upstream tables and SQL transformation, generate a clear and informative description for the downstream table.\n\n"
+            "Based on the following upstream tables and SQL transformation, generate a clear and informative description for the downstream table in plain text.\n\n"
             "UPSTREAM TABLES:\n"
             f"{upstream_info}\n"
             "SQL TRANSFORMATION:\n"
