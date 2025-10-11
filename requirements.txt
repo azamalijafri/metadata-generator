@@ -2,3 +2,4 @@ openai
 databricks-sdk
 gitpython
 pygithub
+dotenv

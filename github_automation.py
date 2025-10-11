@@ -1,5 +1,3 @@
-# github_automation.py
-
 import os
 from git import Repo
 from github import Github
@@ -12,7 +10,13 @@ def write_description_to_file(description, file_path):
 def create_and_push_branch(repo_dir, branch_name, file_path, commit_msg):
     repo = Repo(repo_dir)
     origin = repo.remote(name='origin')
-    repo.git.checkout('HEAD', b=branch_name)
+
+    # Edge case handling: If branch exists, just checkout. Else, create new.
+    if branch_name in repo.heads:
+        repo.heads[branch_name].checkout()
+    else:
+        repo.git.checkout('HEAD', b=branch_name)
+
     repo.git.add(file_path)
     repo.index.commit(commit_msg)
     origin.push(branch_name)
@@ -26,7 +30,7 @@ def create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token)
     return pr.html_url
 
 def automate_github_pr(description, repo_dir, repo_name, github_token):
-    file_path = os.path.join(repo_dir, 'downstream_table_description.md')
+    file_path = os.path.join(repo_dir, 'configs/downstream_table_description.md')
     branch_name = 'update-downstream-table-desc'
     commit_msg = 'Auto-update downstream table metadata description'
     pr_title = 'Update downstream table metadata description'
