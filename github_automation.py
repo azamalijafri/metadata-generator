@@ -11,16 +11,20 @@ def create_and_push_branch(repo_dir, branch_name, file_path, commit_msg):
     repo = Repo(repo_dir)
     origin = repo.remote(name='origin')
 
-    # Edge case handling: If branch exists, just checkout. Else, create new.
+    # Branch checkout or create
     if branch_name in repo.heads:
         repo.heads[branch_name].checkout()
     else:
         repo.git.checkout('HEAD', b=branch_name)
 
+    # Pull latest changes from remote to avoid conflicts
+    origin.pull(branch_name)
+
     repo.git.add(file_path)
     repo.index.commit(commit_msg)
     origin.push(branch_name)
     print(f"Pushed {branch_name}")
+
 
 def create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token):
     g = Github(github_token)
