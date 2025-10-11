@@ -1,0 +1,1 @@
+[updated] This table contains a summary of customer activities, including total orders and spending. It is derived from raw customer and order data through SQL aggregation. The primary purpose is to provide insights into customer behavior for business analysis.
