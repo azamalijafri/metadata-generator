@@ -121,7 +121,7 @@ def create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token)
 def automate_github_pr(description, pr_metadata, repo_dir, repo_name, github_token, table_info):
     logger.info("Starting GitHub PR automation")
     try:
-        file_path = os.path.join(repo_dir, 'configs/downstream_table_description.json')  # Changed to .json
+        file_path = os.path.join(repo_dir, 'configs/table_metadata.json')  # Changed to .json
         
         # Use LLM-generated metadata or fallback to defaults
         branch_name = pr_metadata.get('branch_name', 'update-downstream-table-desc')
