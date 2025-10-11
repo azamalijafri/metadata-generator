@@ -1,0 +1,12 @@
+[
+  {
+    "schema": "default",
+    "table": "raw_customers",
+    "description": "Placeholder description for raw_customers table."
+  },
+  {
+    "schema": "default",
+    "table": "raw_orders",
+    "description": "Placeholder description for raw_orders table."
+  }
+]
