@@ -17,16 +17,20 @@ def create_and_push_branch(repo_dir, branch_name, file_path, commit_msg, descrip
     else:
         repo.git.checkout('HEAD', b=branch_name)
 
-    # Pull latest changes from remote main branch into current branch
-    origin.fetch()  # fetch all remotes first
-    repo.git.merge('origin/main')
-
+    # Write your updated description first
     write_description_to_file(description, file_path)
 
     repo.git.add(file_path)
     repo.index.commit(commit_msg)
+
+    # Now update feature branch with latest main to avoid conflicts
+    origin.fetch()
+    repo.git.merge('origin/main')
+
+    # Push your branch (with your new commit and merged changes)
     origin.push(branch_name)
     print(f"Pushed {branch_name}")
+
 
 
 
