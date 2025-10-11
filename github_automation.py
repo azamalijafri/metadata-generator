@@ -1,5 +1,3 @@
-# github_automation.py
-
 import os
 from git import Repo
 from github import Github
@@ -12,21 +10,43 @@ def write_description_to_file(description, file_path):
 def create_and_push_branch(repo_dir, branch_name, file_path, commit_msg):
     repo = Repo(repo_dir)
     origin = repo.remote(name='origin')
-    repo.git.checkout('HEAD', b=branch_name)
+
+    # Branch checkout or create
+    if branch_name in repo.heads:
+        repo.heads[branch_name].checkout()
+    else:
+        repo.git.checkout('HEAD', b=branch_name)
+
+    # Pull latest changes from remote main branch into current branch
+    origin.fetch()  # fetch all remotes first
+    repo.git.merge('origin/main')
+
     repo.git.add(file_path)
     repo.index.commit(commit_msg)
     origin.push(branch_name)
     print(f"Pushed {branch_name}")
 
+
+
 def create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token):
     g = Github(github_token)
     repo = g.get_repo(repo_name)
+    
+    # Check for existing open PR from this branch
+    prs = repo.get_pulls(state='open', head=branch_name)
+    for pr in prs:
+        if pr.head.ref == branch_name:
+            print(f"Existing PR found: {pr.html_url}")
+            return pr.html_url
+    
+    # If no existing PR, create new one
     pr = repo.create_pull(title=pr_title, body=pr_body, head=branch_name, base='main')
     print(f"Created PR: {pr.html_url}")
     return pr.html_url
 
+
 def automate_github_pr(description, repo_dir, repo_name, github_token):
-    file_path = os.path.join(repo_dir, 'downstream_table_description.md')
+    file_path = os.path.join(repo_dir, 'configs/downstream_table_description.md')
     branch_name = 'update-downstream-table-desc'
     commit_msg = 'Auto-update downstream table metadata description'
     pr_title = 'Update downstream table metadata description'
