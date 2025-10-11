@@ -17,32 +17,33 @@ def main():
     REPO_DIR = os.getenv("REPO_DIR")
     REPO_NAME = os.getenv("REPO_NAME")
 
-    # upstream_tables = [
-    #     "workspace.default.raw_customers",
-    #     "workspace.default.raw_orders"
-    # ]
-    # downstream_table = "workspace.default.customer_summary"
-    # sql_query = """
-    #     SELECT 
-    #         c.customer_id,
-    #         c.customer_name,
-    #         COUNT(o.order_id) AS total_orders,
-    #         SUM(o.order_amount) AS total_spent,
-    #         MAX(o.order_date) AS last_order_date
-    #     FROM workspace.default.raw_customers c
-    #     LEFT JOIN workspace.default.raw_orders o ON c.customer_id = o.customer_id
-    #     GROUP BY c.customer_id, c.customer_name
-    # """
+    upstream_tables = [
+        "workspace.default.raw_customers",
+        "workspace.default.raw_orders"
+    ]
+    downstream_table = "workspace.default.customer_summary"
+    sql_query = """
+        SELECT 
+            c.customer_id,
+            c.customer_name,
+            COUNT(o.order_id) AS total_orders,
+            SUM(o.order_amount) AS total_spent,
+            MAX(o.order_date) AS last_order_date
+        FROM workspace.default.raw_customers c
+        LEFT JOIN workspace.default.raw_orders o ON c.customer_id = o.customer_id
+        GROUP BY c.customer_id, c.customer_name
+    """
 
-    # mf = MetadataFramework(
-    #     DATABRICKS_HOST, 
-    #     DATABRICKS_TOKEN, 
-    #     model_serving_token=MODEL_SERVING_TOKEN, 
-    #     model_endpoint=MODEL_SERVING_ENDPOINT
-    # )
-    # description = mf.run(upstream_tables, downstream_table, sql_query)
+    mf = MetadataFramework(
+        DATABRICKS_HOST, 
+        DATABRICKS_TOKEN, 
+        model_serving_token=MODEL_SERVING_TOKEN, 
+        model_endpoint=MODEL_SERVING_ENDPOINT
+    )
+    
+    description = mf.run(upstream_tables, downstream_table, sql_query)
 
-    # logger.info("Generated Description:\n%s", description)
+    logger.info("Generated Description:\n%s", description)
 
     description = """This table contains a summary of customer activities, including total orders and spending. It is derived from raw customer and order data through SQL aggregation. The primary purpose is to provide insights into customer behavior for business analysis."""
 
