@@ -1,1 +1,1 @@
-This table contains a summary of customer activities, including total orders and spending. It is derived from raw customer and order data through SQL aggregation. The primary purpose is to provide insights into customer behavior for business analysis.
+The customer_summary table aggregates each customer's activity by combining raw customer data with their orders. It provides the total number of orders, total amount spent, and the date of the most recent order per customer, supporting sales performance and retention analysis.
