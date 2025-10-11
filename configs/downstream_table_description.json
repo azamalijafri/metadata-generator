@@ -1,0 +1,7 @@
+[
+  {
+    "schema": "default",
+    "table": "customer_summary",
+    "description": "The customer_summary table aggregates each customer's activity by combining raw customer data with their order history. It provides the total number of orders, total spend, and the date of the most recent order for each customer, enabling business users to assess customer value and engagement."
+  }
+]
