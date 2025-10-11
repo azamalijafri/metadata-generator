@@ -2,160 +2,214 @@ import os
 import requests
 import json
 from databricks.sdk import WorkspaceClient
+from groq import Groq
 import logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 class MetadataFramework:
-    def __init__(self, host, databricks_token, model_serving_token=None, model_endpoint=None):
+    """
+    Generates table descriptions and PR metadata by invoking either Databricks
+    Foundation Model endpoints or the Groq API, based on configuration.
+    """
+
+    def __init__(
+        self,
+        host: str,
+        databricks_token: str,
+        llm_provider: str = "databricks",
+        model_serving_token: str = None,
+        model_endpoint: str = None,
+        groq_api_key: str = None,
+        groq_model: str = "llama3-8b-8192"
+    ):
+        """
+        Initialize the MetadataFramework.
+
+        Args:
+            host: Databricks workspace URL.
+            databricks_token: Token for Databricks REST API.
+            llm_provider: "databricks" or "groq".
+            model_serving_token: Bearer token for Databricks model endpoint.
+            model_endpoint: URL of the Databricks model serving endpoint.
+            groq_api_key: API key for Groq.
+            groq_model: Groq model identifier.
+        """
         logger.info("Connecting to Databricks workspace")
         self.db_client = WorkspaceClient(host=host, token=databricks_token)
+        self.llm_provider = llm_provider.lower()
         self.model_endpoint = model_endpoint
         self.model_serving_token = model_serving_token
+        self.groq_api_key = groq_api_key
+        self.groq_model = groq_model
+        self.groq_client = None
 
-    def fetch_table_metadata(self, table_name):
+        if self.llm_provider == "groq":
+            if not self.groq_api_key:
+                raise ValueError("GROQ_API_KEY is required when using Groq provider")
+            self.groq_client = Groq(api_key=self.groq_api_key)
+            logger.info(f"Initialized Groq client with model: {self.groq_model}")
+        else:
+            if not (self.model_endpoint and self.model_serving_token):
+                logger.warning("Databricks model endpoint or token not provided")
+            else:
+                logger.info("Initialized Databricks model serving client")
+
+    def fetch_table_metadata(self, table_name: str):
+        """
+        Retrieve table metadata from Databricks Catalog.
+
+        Args:
+            table_name: Fully qualified table name (e.g., workspace.default.table).
+
+        Returns:
+            Metadata object representing the table.
+        """
         logger.info(f"Fetching metadata for table: {table_name}")
         try:
-            table_metadata = self.db_client.tables.get(full_name=table_name)
-            logger.info(f"Successfully retrieved metadata for {table_name}")
-            return table_metadata
+            metadata = self.db_client.tables.get(full_name=table_name)
+            logger.info(f"Retrieved metadata for {table_name}")
+            return metadata
         except Exception as e:
             logger.error(f"Failed to fetch metadata for {table_name}: {e}")
             raise
 
-    def generate_description_and_pr_metadata(self, upstream_tables, downstream_table, sql_query):
-        logger.info("Preparing prompt for LLM with table metadata and SQL query")
-        
-        def format_table_info(table):
-            columns = ', '.join(col.name for col in table.columns)
-            return (
-                f"Table Name   : {table.name}\n"
-                f"Description  : {table.comment or 'No description'}\n"
-                f"Columns      : {columns}\n"
-            )
+    def _call_databricks_llm(self, prompt: str) -> str:
+        """
+        Invoke the Databricks Foundation Model chat endpoint.
 
-        upstream_info = "\n".join(format_table_info(table) for table in upstream_tables)
-        downstream_cols = ', '.join(col.name for col in downstream_table.columns)
+        Args:
+            prompt: User prompt for the LLM.
 
-        prompt = (
-            "Based on the following upstream tables and SQL transformation, generate a JSON response with:\n"
-            "1. A clear description for the downstream table\n"
-            "2. PR metadata (branch name, title, body, commit message)\n\n"
-            "UPSTREAM TABLES:\n"
-            f"{upstream_info}\n"
-            "SQL TRANSFORMATION:\n"
-            f"{sql_query}\n"
-            "DOWNSTREAM TABLE SCHEMA:\n"
-            f"Table Name   : {downstream_table.name}\n"
-            f"Columns      : {downstream_cols}\n\n"
-            "Please return a JSON response in this exact format:\n"
-            "{\n"
-            '  "description": "A concise 2-3 sentence description explaining what this table contains, how it\'s derived, and its business purpose",\n'
-            '  "pr_metadata": {\n'
-            '    "branch_name": "descriptive-branch-name",\n'
-            '    "title": "Descriptive PR title",\n'
-            '    "body": "Detailed PR body explaining the changes",\n'
-            '    "commit_message": "Clear commit message describing the update"\n'
-            '  }\n'
-            "}\n\n"
-            "Respond with valid JSON only:"
-        )
-
-        if not self.model_endpoint or not self.model_serving_token:
-            logger.warning("Model endpoint or token not provided, using placeholder")
-            return {
-                "description": "This is a placeholder description generated for the downstream table based on upstream tables and SQL transformation.",
-                "pr_metadata": {
-                    "branch_name": "update-downstream-table-desc",
-                    "title": "Update downstream table metadata description",
-                    "body": "This PR updates the description for the downstream table generated by automation.",
-                    "commit_message": "Auto-update downstream table metadata description"
-                }
-            }
-
+        Returns:
+            Raw text content from the LLM response.
+        """
         headers = {
             "Authorization": f"Bearer {self.model_serving_token}",
             "Content-Type": "application/json"
         }
-
         payload = {
             "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a data engineer specializing in metadata descriptions. Always respond with valid JSON."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role": "system", "content": "You are a data engineer specializing in metadata descriptions. Always respond with valid JSON."},
+                {"role": "user", "content": prompt}
             ],
             "max_tokens": 500,
             "temperature": 0.3
         }
 
-        logger.info("Sending request to Databricks model serving endpoint")
-        try:
-            response = requests.post(self.model_endpoint, headers=headers, json=payload)
-            response.raise_for_status()
-            result = response.json()
+        logger.info("Sending request to Databricks LLM")
+        response = requests.post(self.model_endpoint, headers=headers, json=payload)
+        response.raise_for_status()
+        result = response.json()
 
-            # Extract the text content from response
-            content_parts = result['choices'][0]['message']['content']
-            text_content = ""
-            for part in content_parts:
-                if part.get('type') == 'text' and 'text' in part:
-                    text_content = part['text']
-                    break
+        for part in result["choices"][0]["message"]["content"]:
+            if part.get("type") == "text":
+                return part["text"]
+        logger.warning("No text content found; returning raw JSON")
+        return json.dumps(result)
 
-            if not text_content:
-                logger.warning("No text content found in model response")
-                text_content = str(result)
+    def _call_groq_llm(self, prompt: str) -> str:
+        """
+        Invoke the Groq chat completions API.
 
-            logger.info("Model response received, parsing JSON")
+        Args:
+            prompt: User prompt for the LLM.
 
-            # Parse JSON from the model response
-            try:
-                parsed_result = json.loads(text_content.strip())
-                logger.info("Successfully parsed JSON response from model")
-                return parsed_result
-            except json.JSONDecodeError as json_error:
-                logger.error(f"Failed to parse JSON from model response: {json_error}")
-                # Return fallback structure
-                return {
-                    "description": text_content.strip(),
-                    "pr_metadata": {
-                        "branch_name": "update-downstream-table-desc",
-                        "title": "Update downstream table metadata description",
-                        "body": "This PR updates the description for the downstream table generated by automation.",
-                        "commit_message": "Auto-update downstream table metadata description"
-                    }
-                }
+        Returns:
+            Raw text content from the Groq response.
+        """
+        logger.info(f"Sending request to Groq API (model: {self.groq_model})")
+        response = self.groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a data engineer specializing in metadata descriptions. Always respond with valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            model=self.groq_model,
+            max_tokens=500,
+            temperature=0.3
+        )
+        return response.choices[0].message.content
 
-        except Exception as e:
-            logger.error(f"Error during model serving invocation: {e}")
-            return {
-                "description": "Failed to generate description due to model invocation error.",
-                "pr_metadata": {
-                    "branch_name": "update-downstream-table-desc",
-                    "title": "Update downstream table metadata description",
-                    "body": "This PR updates the description for the downstream table generated by automation.",
-                    "commit_message": "Auto-update downstream table metadata description"
-                }
+    def generate_description_and_pr_metadata(
+        self,
+        upstream_tables: list,
+        downstream_table,
+        sql_query: str
+    ) -> dict:
+        """
+        Generate a JSON structure containing the table description and PR metadata.
+
+        Args:
+            upstream_tables: List of table metadata objects for upstream inputs.
+            downstream_table: Table metadata object for the downstream table.
+            sql_query: SQL transformation string.
+
+        Returns:
+            Parsed JSON with "description" and "pr_metadata".
+        """
+        logger.info(f"Preparing prompt for {self.llm_provider.upper()} LLM")
+
+        def format_table_info(table):
+            cols = ", ".join(col.name for col in table.columns)
+            return f"Table Name: {table.name}\nColumns: {cols}\nDescription: {table.comment or 'No description'}\n"
+
+        upstream_info = "\n".join(format_table_info(t) for t in upstream_tables)
+        downstream_cols = ", ".join(col.name for col in downstream_table.columns)
+        
+        prompt = (
+            "Based on the following upstream tables and SQL transformation, generate a JSON response with:\n"
+            '1. "description"\n'
+            '2. "pr_metadata" containing branch_name, title, body, commit_message\n\n'
+            "UPSTREAM TABLES:\n" + upstream_info +
+            "\nSQL TRANSFORMATION:\n" + sql_query +
+            "\nDOWNSTREAM TABLE SCHEMA:\n" +
+            f"Table Name: {downstream_table.name}\nColumns: {downstream_cols}\n\n"
+            "Respond with valid JSON only."
+        )
+
+        fallback = {
+            "description": "Placeholder description.",
+            "pr_metadata": {
+                "branch_name": "update-downstream-table-desc",
+                "title": "Update downstream table metadata description",
+                "body": "This PR updates the downstream table description.",
+                "commit_message": "Auto-update downstream table metadata description"
             }
+        }
 
-    def run(self, upstream_table_names, downstream_table_name, sql_query):
-        logger.info("Starting metadata framework execution")
         try:
-            upstream_tables = []
-            for name in upstream_table_names:
-                upstream_tables.append(self.fetch_table_metadata(name))
-            
-            downstream_table = self.fetch_table_metadata(downstream_table_name)
-            
-            result = self.generate_description_and_pr_metadata(upstream_tables, downstream_table, sql_query)
-            logger.info("Metadata framework execution completed successfully")
+            if self.llm_provider == "groq":
+                if not self.groq_client:
+                    logger.warning("Groq client not initialized; using fallback")
+                    return fallback
+                raw = self._call_groq_llm(prompt)
+            else:
+                if not (self.model_endpoint and self.model_serving_token):
+                    logger.warning("Databricks LLM not configured; using fallback")
+                    return fallback
+                raw = self._call_databricks_llm(prompt)
+
+            result = json.loads(raw.strip())
+            logger.info("Parsed JSON from LLM response")
             return result
         except Exception as e:
-            logger.error(f"Error in metadata framework execution: {e}")
-            raise
+            logger.error(f"Error invoking {self.llm_provider.upper()} LLM: {e}")
+            return fallback
+
+    def run(self, upstream_table_names: list, downstream_table_name: str, sql_query: str) -> dict:
+        """
+        Fetch metadata, generate the description and PR metadata, and return the result.
+
+        Args:
+            upstream_table_names: List of fully qualified upstream table names.
+            downstream_table_name: Fully qualified downstream table name.
+            sql_query: SQL transformation string.
+
+        Returns:
+            JSON dictionary with description and PR metadata.
+        """
+        logger.info("Running metadata framework")
+        upstream = [self.fetch_table_metadata(n) for n in upstream_table_names]
+        downstream = self.fetch_table_metadata(downstream_table_name)
+        return self.generate_description_and_pr_metadata(upstream, downstream, sql_query)

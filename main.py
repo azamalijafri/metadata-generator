@@ -1,8 +1,8 @@
 import os
 import logging
+from dotenv import load_dotenv
 from metadata_framework import MetadataFramework
 from github_automation import automate_github_pr
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -13,26 +13,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
+    """
+    Load configuration, read SQL, generate table description and PR metadata via LLM,
+    then create or update a GitHub PR with the results.
+    """
     logger.info("Starting metadata generation and GitHub PR automation")
 
-    # Load environment variables
+    # Environment configuration
     DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
     DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
     MODEL_SERVING_ENDPOINT = os.getenv("MODEL_SERVING_ENDPOINT")
     MODEL_SERVING_TOKEN = os.getenv("MODEL_SERVING_TOKEN")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "databricks").lower()
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
     REPO_DIR = os.getenv("REPO_DIR")
     REPO_NAME = os.getenv("REPO_NAME")
 
-    logger.info(f"Configuration loaded - Repository: {REPO_NAME}")
+    logger.info(f"Configuration loaded - Repository: {REPO_NAME}, LLM Provider: {LLM_PROVIDER}")
 
     upstream_tables = [
         "workspace.default.raw_customers",
         "workspace.default.raw_orders"
     ]
+    
     downstream_table = "workspace.default.customer_summary"
 
-    # Extract actual table name for SQL filename
     actual_table_name = downstream_table.split('.')[-1]
     sql_file_path = os.path.join(os.getcwd(), "sql", f"{actual_table_name}.sql")
     logger.info(f"Loading SQL from file: {sql_file_path}")
@@ -45,25 +52,26 @@ def main():
         logger.error(f"Failed to read SQL file {sql_file_path}: {e}")
         raise
 
-    logger.info("Initializing MetadataFramework with Databricks connection")
+    logger.info(f"Initializing MetadataFramework with {LLM_PROVIDER.upper()} provider")
     mf = MetadataFramework(
         DATABRICKS_HOST,
         DATABRICKS_TOKEN,
+        llm_provider=LLM_PROVIDER,
         model_serving_token=MODEL_SERVING_TOKEN,
-        model_endpoint=MODEL_SERVING_ENDPOINT
+        model_endpoint=MODEL_SERVING_ENDPOINT,
+        groq_api_key=GROQ_API_KEY,
+        groq_model=GROQ_MODEL
     )
 
     logger.info("Generating table description and PR metadata using LLM")
     result = mf.run(upstream_tables, downstream_table, sql_query)
 
-    # Extract description and PR metadata from JSON result
     description = result.get('description', 'No description generated')
-    pr_metadata = result.get('pr_metadata', {})
+    logger.info("Generated Description: %s", description)
 
-    logger.info("Description generated successfully")
+    pr_metadata = result.get('pr_metadata', {})
     logger.info("Starting GitHub PR automation")
 
-    # Pass the downstream table info for JSON entry
     pr_url = automate_github_pr(
         description,
         pr_metadata,
