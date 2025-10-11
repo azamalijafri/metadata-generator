@@ -25,9 +25,19 @@ def create_and_push_branch(repo_dir, branch_name, file_path, commit_msg):
 def create_pull_request(repo_name, branch_name, pr_title, pr_body, github_token):
     g = Github(github_token)
     repo = g.get_repo(repo_name)
+    
+    # Check for existing open PR from this branch
+    prs = repo.get_pulls(state='open', head=branch_name)
+    for pr in prs:
+        if pr.head.ref == branch_name:
+            print(f"Existing PR found: {pr.html_url}")
+            return pr.html_url
+    
+    # If no existing PR, create new one
     pr = repo.create_pull(title=pr_title, body=pr_body, head=branch_name, base='main')
     print(f"Created PR: {pr.html_url}")
     return pr.html_url
+
 
 def automate_github_pr(description, repo_dir, repo_name, github_token):
     file_path = os.path.join(repo_dir, 'configs/downstream_table_description.md')
