@@ -8,5 +8,10 @@
     "schema": "default",
     "table": "raw_orders",
     "description": "Placeholder description for raw_orders table."
+  },
+  {
+    "schema": "default",
+    "table": "customer_summary",
+    "description": "Creates a summarized view of customer activity by aggregating orders per customer. The transformation joins raw customer data with raw orders, counts total orders, sums total spend, and captures the most recent order date. The result is stored in the customer_summary table with columns: customer_id, customer_name, total_orders, total_spent, last_order_date."
   }
 ]
