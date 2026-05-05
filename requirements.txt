@@ -1,5 +1,4 @@
 databricks-sdk
-gitpython
 pygithub
 dotenv
-groq
+openai

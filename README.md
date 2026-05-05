@@ -4,16 +4,20 @@
 
 This repository contains an automated metadata generation framework that:
 
-- Fetches table metadata from Databricks
-- Generates descriptive metadata and pull request metadata using an LLM (Databricks or Groq)
-- Updates a JSON file with new table descriptions
-- Creates or updates a Git branch and opens a GitHub pull request
+- Accepts a list of downstream view names
+- Fetches upstream lineage and SQL definitions directly from Databricks Unity Catalog
+- Generates descriptions for all views using an LLM (Databricks or Groq)
+- Creates a single clustered PR updating `configs/table_metadata.json` with all descriptions
 
 ## Features
 
 - **LLM Provider Options**: Choose between Databricks model serving or Groq API via `LLM_PROVIDER`
-- **JSON Append**: Preserve existing entries append/update new descriptions
-- **Automated PR**: Branch creation, commit, merge from `main`, push, and PR creation/lookup
+- **OpenAI-compatible**: Uses the `openai` SDK for both providers — just pass the appropriate API key
+- **Automatic Lineage**: Upstream dependencies are resolved from Databricks `view_dependencies`
+- **SQL from Databricks**: View SQL definitions are fetched via `view_definition` from the catalog
+- **Clustered PR**: All views are processed together in one branch/PR
+- **JSON Append**: Preserve existing entries, append/update new descriptions
+- **Server-side Git**: All Git operations happen via the GitHub API (no local repo needed)
 - **Config via .env**: All credentials and settings are loaded from environment variables
 
 ---
@@ -35,36 +39,22 @@ pip install -r requirements.txt
 
 ### 3. Create `.env` File
 
-In the project root, add a `.env` file with the following keys:
+Copy `.env.sample` and fill in your values:
 
 ```
-# Databricks
-
-DATABRICKS_HOST=https://<your-databricks-instance>
-DATABRICKS_TOKEN=<your-databricks-token>
-MODEL_SERVING_ENDPOINT=<databricks-serving-endpoint-url>
-MODEL_SERVING_TOKEN=<databricks-token>
-
-# Groq
-
-GROQ_API_KEY=<your-groq-api-key>
-GROQ_MODEL=<your-model>
-
-# LLM Provider: "databricks" or "groq"
-
-LLM_PROVIDER=databricks
-
-# GitHub
-
-GITHUB_TOKEN=<your-github-pat>
-REPO_DIR=/path/to/local/repo
-REPO_NAME=<github-username/repo-name>
+cp .env.sample .env
 ```
 
-### 4. Prepare SQL Files
+### 4. Configure Views
 
-Place your SQL transformation files in the `sql/` folder. File names should match the downstream table’s simple name.
-Example: For `workspace.default.customer_summary`, create `sql/customer_summary.sql`.
+Edit the `downstream_views` list in `main.py` with your target views:
+
+```python
+downstream_views = [
+    "workspace.default.customer_summary",
+    "workspace.default.order_summary"
+]
+```
 
 ### 5. Run the Automation
 
@@ -74,31 +64,34 @@ python main.py
 
 This will:
 
-1. Load the SQL file
-2. Fetch metadata from Databricks
-3. Call the LLM to generate description and PR metadata
-4. Append/update `table_metadata.json`
-5. Create or update a Git branch and open/update a GitHub PR
+1. For each downstream view, fetch upstream lineage and SQL definition from Databricks
+2. Call the LLM to generate descriptions and clustered PR metadata
+3. Update `table_metadata.json` with all descriptions
+4. Create a Git branch via GitHub API, commit, and open a PR
 
 ---
 
-## Folder Structure
+## File Structure
 
 ```
-
 ├── configs/
-│ └── table_metadata.json # JSON file with table descriptions
-├── sql/ # SQL files for each downstream table
-│ └── customer_summary.sql
-├── metadata_framework.py # Core logic for metadata and LLM calls
-├── github_automation.py # Git + GitHub automation
-├── main.py # Entry-point script
+│   └── table_metadata.json       # JSON file with table descriptions
+├── databricks_client.py          # Databricks WorkspaceClient creation
+├── databricks_metadata.py        # Table metadata, lineage, SQL fetching
+├── llm_provider.py               # OpenAI client factory (Databricks + Groq)
+├── prompt_builder.py             # Table formatting + prompt building
+├── github_ops.py                 # File CRUD + branch creation via GitHub API
+├── github_pr.py                  # PR creation and lookup
+├── github_metadata.py            # JSON description updates
+├── github_automation.py          # PR orchestration (public entry point)
+├── metadata_framework.py         # Orchestrates databricks + llm
+├── main.py                       # Entry-point script
 ├── requirements.txt
+├── .env.sample                   # Template for environment variables
 └── README.md
-
 ```
 
 ## License
 
 MIT License.
-Feel free to adapt or extend this framework to fit your organization’s metadata workflows.
+Feel free to adapt or extend this framework to fit your organization's metadata workflows.
