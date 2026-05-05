@@ -8,5 +8,15 @@
     "schema": "default",
     "table": "raw_orders",
     "description": "Placeholder description for raw_orders table."
+  },
+  {
+    "schema": "default",
+    "table": "customer_summary",
+    "description": "Aggregates customer information with their order metrics, providing a summary of each customer's total orders, total spending, and most recent order date."
+  },
+  {
+    "schema": "default",
+    "table": "order_summary",
+    "description": "Provides a consolidated view of orders, including customer name and a derived order_state field that categorizes the order status into SUCCESS, IN_PROGRESS, or FAILED."
   }
 ]
