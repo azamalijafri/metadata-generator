@@ -1,0 +1,12 @@
+[
+  {
+    "schema": "default",
+    "table": "customer_summary",
+    "description": "Consolidated view of customer profiles with purchase metrics, showing total orders, spend, and last order date, including customers with no orders."
+  },
+  {
+    "schema": "default",
+    "table": "order_summary",
+    "description": "Consolidates order and customer data, mapping raw status to business-friendly states (SUCCESS, IN_PROGRESS, FAILED) for streamlined reporting and analytics."
+  }
+]
