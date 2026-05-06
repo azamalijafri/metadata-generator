@@ -7,13 +7,10 @@ from github_metadata import update_descriptions_in_json
 logger = logging.getLogger(__name__)
 
 
-def automate_github_pr(descriptions: dict, pr_metadata: dict,
+def automate_github_pr(descriptions: dict, branch_name: str, commit_msg: str,
+                       pr_title: str, pr_body: str,
                        repo_name: str, github_token: str) -> str:
     file_path = "configs/table_metadata.json"
-    branch_name = pr_metadata.get('branch_name', 'update-downstream-table-desc')
-    commit_msg = pr_metadata.get('commit_message', 'Auto-update downstream table metadata description')
-    pr_title = pr_metadata.get('title', 'Update downstream table metadata description')
-    pr_body = pr_metadata.get('body', 'Update downstream table description via automation')
 
     logger.info(f"Automating PR on branch: {branch_name} for {len(descriptions)} views")
 
@@ -21,7 +18,7 @@ def automate_github_pr(descriptions: dict, pr_metadata: dict,
     try:
         repo = gh.get_repo(repo_name)
     except Exception as e:
-        raise RuntimeError(f"Failed to access repo '{repo_name}'. Check that REPO_NAME is in 'owner/repo' format and GITHUB_TOKEN has access. Error: {e}") from e
+        raise RuntimeError(f"Failed to access repo '{repo_name}'. Check REPO_NAME format and GITHUB_TOKEN access. Error: {e}") from e
 
     create_branch_safe(repo, branch_name)
 

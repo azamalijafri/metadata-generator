@@ -12,24 +12,37 @@ def format_table_info(table) -> str:
     )
 
 
-def build_clustered_prompt(views_data: list) -> str:
-    all_views_info = ""
-    for vd in views_data:
-        all_views_info += f"\n{'='*60}\n"
-        all_views_info += f"DOWNSTREAM VIEW: {vd['downstream'].full_name}\n"
-        all_views_info += f"Current Description: {vd['downstream'].comment or 'No description'}\n"
-        all_views_info += f"SQL Definition:\n{vd['sql']}\n"
-        all_views_info += f"Upstream Tables:\n"
-        for up in vd['upstream']:
-            all_views_info += format_table_info(up)
-        all_views_info += f"Downstream Schema:\n{format_table_info(vd['downstream'])}\n"
+def format_sample_data(rows: list) -> str:
+    if not rows:
+        return "  No sample data available.\n"
+    lines = []
+    for i, row in enumerate(rows):
+        values = ", ".join(f"{k}={v}" for k, v in row.items())
+        lines.append(f"  Row {i+1}: {{{values}}}")
+    return "\n".join(lines) + "\n"
+
+
+def build_view_prompt(upstream_tables: list, downstream, sql: str, upstream_samples: list, downstream_sample: list) -> str:
+    info = ""
+    info += f"VIEW: {downstream.full_name}\n"
+    info += f"Current Description: {downstream.comment or 'No description'}\n"
+    info += f"SQL Definition:\n{sql}\n"
+    info += f"Upstream Tables:\n"
+    for i, up in enumerate(upstream_tables):
+        info += format_table_info(up)
+        info += f"Sample Data:\n{format_sample_data(upstream_samples[i])}\n"
+    info += f"Downstream Schema:\n{format_table_info(downstream)}\n"
+    info += f"Downstream Sample Data:\n{format_sample_data(downstream_sample)}\n"
 
     return (
-        "You are given metadata for multiple downstream views. "
-        "For EACH view, generate a description based on its upstream tables, SQL transformation, and schema.\n\n"
-        "Respond with a JSON object containing:\n"
-        '1. "descriptions": a dictionary mapping each downstream view full_name to its generated description string\n'
-        '2. "pr_metadata": an object with branch_name, title, body, commit_message for a clustered PR covering all views\n\n'
-        "VIEWS METADATA:\n" + all_views_info +
+        "Generate a concise business-focused description for the view described below.\n\n"
+        "Guidelines:\n"
+        "- Focus on the business purpose and what the view represents\n"
+        "- Describe the transformation logic in plain English\n"
+        "- Keep the description around 200 characters\n"
+        "- Avoid mentioning column names, table names, or SQL keywords unless necessary\n\n"
+        "Respond with valid JSON only in this format:\n"
+        '{"description": "Your description here"}\n\n'
+        "METADATA:\n" + info +
         "\nRespond with valid JSON only."
     )

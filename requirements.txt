@@ -1,4 +1,5 @@
 databricks-sdk
+databricks-sql-connector[pyarrow]
 pygithub
 dotenv
 openai

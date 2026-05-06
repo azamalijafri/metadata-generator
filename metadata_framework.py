@@ -1,12 +1,18 @@
 import json
+import re
 import logging
 from databricks_client import create_workspace_client
-from databricks_metadata import fetch_view_context
+from databricks_metadata import fetch_view_context, fetch_sample_rows
 from llm_provider import create_llm_client, generate_response
-from prompt_builder import build_clustered_prompt
+from prompt_builder import build_view_prompt
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+PR_BRANCH = "update-table-metadata-descriptions"
+PR_TITLE = "Update table metadata descriptions"
+PR_BODY = "Auto-generated descriptions for downstream views."
+COMMIT_MESSAGE = "Auto-update downstream table metadata descriptions"
 
 
 class MetadataFramework:
@@ -19,9 +25,13 @@ class MetadataFramework:
         model_serving_token: str = None,
         model_serving_endpoint_name: str = None,
         groq_api_key: str = None,
-        groq_model: str = "llama3-8b-8192"
+        groq_model: str = "llama3-8b-8192",
+        warehouse_http_path: str = None
     ):
         self.db_client = create_workspace_client(host, databricks_token)
+        self.host = host
+        self.token = databricks_token
+        self.http_path = warehouse_http_path
         self.llm_provider = llm_provider.lower()
 
         if self.llm_provider == "groq":
@@ -50,36 +60,67 @@ class MetadataFramework:
                 base_url=base_url
             )
 
-    def _collect_view_data(self, downstream_table_names: list) -> list:
-        views_data = []
-        for table_name in downstream_table_names:
-            logger.info(f"Processing view: {table_name}")
-            upstream, sql, downstream = fetch_view_context(self.db_client, table_name)
-            views_data.append({
-                "upstream": upstream,
-                "downstream": downstream,
-                "sql": sql
-            })
-        return views_data
-
-    def _generate_clustered_metadata(self, views_data: list) -> dict:
-        prompt = build_clustered_prompt(views_data)
-        logger.info(f"Preparing prompt for LLM with {len(views_data)} views")
-
-        raw = generate_response(self.llm_client, self.model_name, prompt)
-        logger.info(f"Raw LLM response (first 500 chars):\n{raw[:500]}")
+    def _extract_description(self, raw: str) -> str:
+        logger.info(f"Raw LLM response:\n{raw}")
 
         text = raw.strip()
+
         if text.startswith("```"):
             lines = text.split("\n")
             lines = [l for l in lines if not l.strip().startswith("```")]
             text = "\n".join(lines).strip()
 
-        result = json.loads(text)
-        logger.info("Parsed JSON from LLM response")
-        return result
+        try:
+            result = json.loads(text)
+            if "description" in result:
+                return result["description"]
+        except json.JSONDecodeError:
+            pass
+
+        match = re.search(r'"description"\s*:\s*"([^"]*)"', text)
+        if match:
+            return match.group(1)
+
+        if text and not text.startswith("{"):
+            return text
+
+        raise ValueError(f"Could not extract description from LLM response:\n{raw}")
+
+    def _generate_description(self, upstream_tables: list, downstream, sql: str, upstream_samples: list, downstream_sample: list) -> str:
+        prompt = build_view_prompt(upstream_tables, downstream, sql, upstream_samples, downstream_sample)
+        logger.info(f"Generating description for: {downstream.full_name}")
+
+        raw = generate_response(self.llm_client, self.model_name, prompt)
+        return self._extract_description(raw)
+
+    def _fetch_sample(self, table_name: str) -> list:
+        if not self.http_path:
+            return []
+        return fetch_sample_rows(self.host, self.http_path, self.token, table_name)
 
     def run(self, downstream_table_names: list) -> dict:
         logger.info(f"Running metadata framework for {len(downstream_table_names)} views")
-        views_data = self._collect_view_data(downstream_table_names)
-        return self._generate_clustered_metadata(views_data)
+
+        descriptions = {}
+        for table_name in downstream_table_names:
+            logger.info(f"Processing view: {table_name}")
+            upstream, sql, downstream = fetch_view_context(self.db_client, table_name)
+
+            upstream_samples = []
+            for up_table in upstream:
+                sample = self._fetch_sample(up_table.full_name)
+                upstream_samples.append(sample)
+
+            downstream_sample = self._fetch_sample(downstream.full_name)
+
+            description = self._generate_description(upstream, downstream, sql, upstream_samples, downstream_sample)
+            descriptions[table_name] = description
+            logger.info(f"Generated Description for {table_name}: {description}")
+
+        return {
+            "descriptions": descriptions,
+            "branch_name": PR_BRANCH,
+            "pr_title": PR_TITLE,
+            "pr_body": PR_BODY,
+            "commit_message": COMMIT_MESSAGE
+        }

@@ -24,6 +24,7 @@ def main():
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "databricks").lower()
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
     REPO_NAME = os.getenv("REPO_NAME")
+    WAREHOUSE_HTTP_PATH = os.getenv("WAREHOUSE_HTTP_PATH")
 
     if not REPO_NAME:
         raise ValueError("REPO_NAME is not set. Expected format: github-username/repo-name")
@@ -47,24 +48,21 @@ def main():
         model_serving_token=MODEL_SERVING_TOKEN,
         model_serving_endpoint_name=MODEL_SERVING_ENDPOINT_NAME,
         groq_api_key=GROQ_API_KEY,
-        groq_model=GROQ_MODEL
+        groq_model=GROQ_MODEL,
+        warehouse_http_path=WAREHOUSE_HTTP_PATH
     )
 
-    logger.info(f"Generating descriptions for {len(downstream_views)} views with lineage")
+    logger.info(f"Generating descriptions for {len(downstream_views)} views")
     result = mf.run(downstream_views)
 
-    descriptions = result.get('descriptions', {})
-    for view_name, desc in descriptions.items():
-        logger.info(f"Generated Description for {view_name}: %s", desc)
-
-    pr_metadata = result.get('pr_metadata', {})
-    logger.info("Starting GitHub PR automation")
-
     pr_url = automate_github_pr(
-        descriptions,
-        pr_metadata,
-        REPO_NAME,
-        GITHUB_TOKEN
+        descriptions=result["descriptions"],
+        branch_name=result["branch_name"],
+        commit_msg=result["commit_message"],
+        pr_title=result["pr_title"],
+        pr_body=result["pr_body"],
+        repo_name=REPO_NAME,
+        github_token=GITHUB_TOKEN
     )
 
     logger.info(f"Process completed successfully - PR URL: {pr_url}")
