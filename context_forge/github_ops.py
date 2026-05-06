@@ -5,9 +5,12 @@ from github.GithubException import GithubException
 logger = logging.getLogger(__name__)
 
 
-def get_file_content(repo, file_path: str) -> tuple:
+def get_file_content(repo, file_path: str, ref: str = None) -> tuple:
     logger.info(f"Fetching file content for: {file_path}")
-    content = repo.get_contents(file_path, ref="main")
+    kwargs = {"ref": ref} if ref else {}
+    content = repo.get_contents(file_path, **kwargs)
+    if isinstance(content, list):
+        content = content[0]
     decoded = base64.b64decode(content.content).decode("utf-8")
     return decoded, content.sha
 

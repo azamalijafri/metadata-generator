@@ -1,97 +1,104 @@
-# Metadata Generator README
+# Context Forge
 
-## Overview
+Automated metadata generation for Databricks views with GitHub PR automation.
 
-This repository contains an automated metadata generation framework that:
+## Installation
 
-- Accepts a list of downstream view names
-- Fetches upstream lineage and SQL definitions directly from Databricks Unity Catalog
-- Generates descriptions for all views using an LLM (Databricks or Groq)
-- Creates a single clustered PR updating `configs/table_metadata.json` with all descriptions
-
-## Features
-
-- **LLM Provider Options**: Choose between Databricks model serving or Groq API via `LLM_PROVIDER`
-- **OpenAI-compatible**: Uses the `openai` SDK for both providers — just pass the appropriate API key
-- **Automatic Lineage**: Upstream dependencies are resolved from Databricks `view_dependencies`
-- **SQL from Databricks**: View SQL definitions are fetched via `view_definition` from the catalog
-- **Clustered PR**: All views are processed together in one branch/PR
-- **JSON Append**: Preserve existing entries, append/update new descriptions
-- **Server-side Git**: All Git operations happen via the GitHub API (no local repo needed)
-- **Config via .env**: All credentials and settings are loaded from environment variables
-
----
-
-## Getting Started
-
-### 1. Clone the Repository
-
-```
-git clone https://github.com/azamalijafri/metadata-generator.git
-cd metadata-generator
+```bash
+pip install context-forge
 ```
 
-### 2. Install Dependencies
+Or from source:
 
-```
-pip install -r requirements.txt
-```
-
-### 3. Create `.env` File
-
-Copy `.env.sample` and fill in your values:
-
-```
-cp .env.sample .env
+```bash
+git clone https://github.com/azamalijafri/context-forge.git
+cd context-forge
+pip install -e .
 ```
 
-### 4. Configure Views
-
-Edit the `downstream_views` list in `main.py` with your target views:
+## Usage
 
 ```python
-downstream_views = [
+from context_forge import ContextForge, automate_github_pr
+
+# Initialize
+cf = ContextForge(
+    host="https://your-databricks-instance",
+    databricks_token="your-token",
+    llm_provider="groq",                    # or "databricks"
+    groq_api_key="your-groq-key",
+    groq_model="llama3-8b-8192",
+    warehouse_http_path="/sql/1.0/warehouses/your-id"
+)
+
+# Generate descriptions for downstream views
+result = cf.run([
     "workspace.default.customer_summary",
     "workspace.default.order_summary"
-]
+])
+
+# Open a GitHub PR with the generated descriptions
+pr_url = automate_github_pr(
+    descriptions=result["descriptions"],
+    branch_name=result["branch_name"],
+    commit_msg=result["commit_message"],
+    pr_title=result["pr_title"],
+    pr_body=result["pr_body"],
+    repo_name="your-username/your-repo",
+    github_token="your-github-pat"
+)
 ```
 
-### 5. Run the Automation
+## Configuration
 
-```
-python main.py
-```
+### Databricks
+| Parameter | Description |
+|---|---|
+| `host` | Databricks workspace URL |
+| `databricks_token` | Databricks personal access token |
+| `warehouse_http_path` | SQL warehouse HTTP path (for sample data) |
 
-This will:
+### LLM
+| Provider | Parameters |
+|---|---|
+| **Groq** | `llm_provider="groq"`, `groq_api_key`, `groq_model` |
+| **Databricks** | `llm_provider="databricks"`, `model_serving_token`, `model_serving_endpoint_name` |
 
-1. For each downstream view, fetch upstream lineage and SQL definition from Databricks
-2. Call the LLM to generate descriptions and clustered PR metadata
-3. Update `table_metadata.json` with all descriptions
-4. Create a Git branch via GitHub API, commit, and open a PR
+### GitHub
+| Parameter | Description |
+|---|---|
+| `repo_name` | GitHub repo in `owner/repo` format |
+| `github_token` | PAT with `repo` scope |
 
----
+## How It Works
+
+1. For each downstream view, fetches upstream lineage from Databricks Unity Catalog
+2. Retrieves the view SQL definition and 3 sample rows per table
+3. Sends isolated context to the LLM to generate a ~200 char business-focused description
+4. Collects all descriptions into a single commit on `configs/table_metadata.json`
+5. Opens a clustered GitHub PR
 
 ## File Structure
 
 ```
-├── configs/
-│   └── table_metadata.json       # JSON file with table descriptions
-├── databricks_client.py          # Databricks WorkspaceClient creation
-├── databricks_metadata.py        # Table metadata, lineage, SQL fetching
-├── llm_provider.py               # OpenAI client factory (Databricks + Groq)
-├── prompt_builder.py             # Table formatting + prompt building
-├── github_ops.py                 # File CRUD + branch creation via GitHub API
-├── github_pr.py                  # PR creation and lookup
-├── github_metadata.py            # JSON description updates
-├── github_automation.py          # PR orchestration (public entry point)
-├── metadata_framework.py         # Orchestrates databricks + llm
-├── main.py                       # Entry-point script
-├── requirements.txt
-├── .env.sample                   # Template for environment variables
+├── context_forge/
+│   ├── __init__.py               # Public API
+│   ├── framework.py              # ContextForge orchestrator
+│   ├── databricks_client.py      # WorkspaceClient creation
+│   ├── databricks_metadata.py    # Table metadata, lineage, sample data
+│   ├── llm_provider.py           # OpenAI client factory
+│   ├── prompt_builder.py         # LLM prompt construction
+│   ├── github_ops.py             # File + branch operations
+│   ├── github_pr.py              # PR creation
+│   ├── github_metadata.py        # JSON updates
+│   └── github_automation.py      # PR orchestration
+├── examples/
+│   └── run.py                    # Example script
+├── pyproject.toml
+├── .env.sample
 └── README.md
 ```
 
 ## License
 
-MIT License.
-Feel free to adapt or extend this framework to fit your organization's metadata workflows.
+MIT

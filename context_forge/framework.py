@@ -1,13 +1,12 @@
 import json
 import re
 import logging
-from databricks_client import create_workspace_client
-from databricks_metadata import fetch_view_context, fetch_sample_rows
-from llm_provider import create_llm_client, generate_response
-from prompt_builder import build_view_prompt
+from .databricks_client import create_workspace_client
+from .databricks_metadata import fetch_view_context, fetch_sample_rows
+from .llm_provider import create_llm_client, generate_response
+from .prompt_builder import build_view_prompt
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 PR_BRANCH = "update-table-metadata-descriptions"
 PR_TITLE = "Update table metadata descriptions"
@@ -15,7 +14,7 @@ PR_BODY = "Auto-generated descriptions for downstream views."
 COMMIT_MESSAGE = "Auto-update downstream table metadata descriptions"
 
 
-class MetadataFramework:
+class ContextForge:
 
     def __init__(
         self,
@@ -99,7 +98,7 @@ class MetadataFramework:
         return fetch_sample_rows(self.host, self.http_path, self.token, table_name)
 
     def run(self, downstream_table_names: list) -> dict:
-        logger.info(f"Running metadata framework for {len(downstream_table_names)} views")
+        logger.info(f"Running ContextForge for {len(downstream_table_names)} views")
 
         descriptions = {}
         for table_name in downstream_table_names:
